@@ -1,0 +1,12 @@
+[package]
+name = "fxst-devtool"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+egui = "0.33.3"
+egui-wgpu = "0.33.3"
+pollster = "0.4.0"
+thiserror = "2.0.18"
+wgpu = "28.0.0"
+winit = "0.30.12"
