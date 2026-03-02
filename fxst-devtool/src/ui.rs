@@ -1,30 +1,18 @@
 pub mod error;
+pub mod wgpu;
 
 use std::sync::Arc;
-use wgpu::{BackendOptions, Backends, Instance, InstanceDescriptor, InstanceFlags, MemoryBudgetThresholds, Surface};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::windows::EventLoopBuilderExtWindows;
 use winit::window::{Window, WindowAttributes, WindowId};
 use crate::ui::error::{StartError, StartErrorTask};
+use crate::ui::wgpu::{create_instance, setup_graphics, GraphicsState};
 
 pub struct EventLoopContext {
     windows: Vec<Arc<Window>>,
-    surface: Surface
-}
-
-fn create_instance() -> Instance {
-    let backend_options = BackendOptions::default();
-
-    let desc = InstanceDescriptor {
-        backend_options,
-        flags: InstanceFlags::DEBUG,
-        backends: Backends::VULKAN,
-        memory_budget_thresholds: MemoryBudgetThresholds::default()
-    };
-
-    Instance::new(&desc)
+    graphics: Option<GraphicsState>
 }
 
 impl ApplicationHandler for EventLoopContext {
@@ -34,7 +22,7 @@ impl ApplicationHandler for EventLoopContext {
         let window = Arc::new(event_loop.create_window(attrs).expect("Cant create window"));
 
         let instance = create_instance();
-        let surface = instance.create_surface(window.clone()).expect("Cant create surface");
+        self.graphics = Some(pollster::block_on(setup_graphics(&instance, window.clone())));
 
         window.set_visible(true);
         self.windows.push(window.clone());
@@ -47,7 +35,7 @@ impl ApplicationHandler for EventLoopContext {
 
 impl EventLoopContext {
     pub fn new() -> Self {
-        EventLoopContext { windows: vec![] }
+        Self { windows: vec![], graphics: None }
     }
 }
 
