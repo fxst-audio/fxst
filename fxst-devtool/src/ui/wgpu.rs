@@ -1,11 +1,11 @@
 use std::sync::Arc;
-use wgpu::{Adapter, BackendOptions, Backends, Device, DeviceDescriptor, ExperimentalFeatures, Features, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, PowerPreference, Queue, RequestAdapterOptions, Surface, Trace};
+use wgpu::{Adapter, BackendOptions, Backends, CompositeAlphaMode, Device, DeviceDescriptor, ExperimentalFeatures, Features, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, PowerPreference, PresentMode, Queue, RequestAdapterOptions, Surface, SurfaceConfiguration, TextureFormat, TextureUsages, Trace};
 use winit::window::Window;
 
 pub struct GraphicsState {
-    surface: Surface<'static>,
-    device: Device,
-    queue: Queue
+    pub surface: Surface<'static>,
+    pub device: Device,
+    pub queue: Queue
 }
 
 pub fn create_instance() -> Instance {
@@ -48,10 +48,24 @@ pub async fn get_device(adapter: &Adapter) -> (Device, Queue) {
         .expect("Cant get device")
 }
 
-pub async fn setup_graphics(instance: &Instance, window: Arc<Window>) -> GraphicsState {
+pub async fn setup_graphics<'window>(instance: &Instance, window: Arc<dyn Window>) -> GraphicsState {
+    let window_size = window.surface_size();
+
     let surface = instance.create_surface(window).expect("Cant create surface");
     let adapter = get_adapter(instance, &surface).await;
     let (device, queue) = get_device(&adapter).await;
+
+    let surface_config = SurfaceConfiguration {
+        usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
+        format: TextureFormat::Rgba8UnormSrgb,
+        width: window_size.width * 2,
+        height: window_size.height * 2,
+        present_mode: PresentMode::Mailbox,
+        desired_maximum_frame_latency: 1 / 60,
+        alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![ TextureFormat::Rgba8UnormSrgb ]
+    };
+    surface.configure(&device, &surface_config);
 
     GraphicsState {
         surface,
@@ -59,3 +73,5 @@ pub async fn setup_graphics(instance: &Instance, window: Arc<Window>) -> Graphic
         queue
     }
 }
+
+// pub fn render()
