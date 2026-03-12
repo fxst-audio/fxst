@@ -38,7 +38,7 @@ pub async fn get_device(adapter: &Adapter) -> (Device, Queue) {
         label: Some("unnamed device"),
         experimental_features: ExperimentalFeatures::disabled(),
         memory_hints: MemoryHints::Performance,
-        required_features: Features::empty(),
+        required_features: Features::TEXTURE_BINDING_ARRAY,
         required_limits: Limits::default(),
         trace: Trace::Off
     };
@@ -48,6 +48,23 @@ pub async fn get_device(adapter: &Adapter) -> (Device, Queue) {
         .expect("Cant get device")
 }
 
+pub fn get_texture_format() -> TextureFormat {
+    TextureFormat::Rgba8UnormSrgb
+}
+
+pub fn get_surface_config(width: u32, height: u32) -> SurfaceConfiguration {
+    SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: get_texture_format(),
+        width: width * 2,
+        height: height * 2,
+        present_mode: PresentMode::Mailbox,
+        desired_maximum_frame_latency: 1 / 60,
+        alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![ get_texture_format() ]
+    }
+}
+
 pub async fn setup_graphics<'window>(instance: &Instance, window: Arc<dyn Window>) -> GraphicsState {
     let window_size = window.surface_size();
 
@@ -55,16 +72,7 @@ pub async fn setup_graphics<'window>(instance: &Instance, window: Arc<dyn Window
     let adapter = get_adapter(instance, &surface).await;
     let (device, queue) = get_device(&adapter).await;
 
-    let surface_config = SurfaceConfiguration {
-        usage: TextureUsages::COPY_DST | TextureUsages::RENDER_ATTACHMENT,
-        format: TextureFormat::Rgba8UnormSrgb,
-        width: window_size.width * 2,
-        height: window_size.height * 2,
-        present_mode: PresentMode::Mailbox,
-        desired_maximum_frame_latency: 1 / 60,
-        alpha_mode: CompositeAlphaMode::Opaque,
-        view_formats: vec![ TextureFormat::Rgba8UnormSrgb ]
-    };
+    let surface_config = get_surface_config(window_size.width, window_size.height);
     surface.configure(&device, &surface_config);
 
     GraphicsState {

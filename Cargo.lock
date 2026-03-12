@@ -772,6 +772,7 @@ version = "0.1.0"
 name = "fxst-devtool"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "egui",
  "egui-wgpu",
  "image",

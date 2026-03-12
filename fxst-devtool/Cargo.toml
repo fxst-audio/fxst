@@ -11,3 +11,4 @@ wgpu = "27.0.1"
 egui-wgpu = "0.33.3"
 winit = { git = "https://github.com/rust-windowing/winit" }
 image = "0.25.9"
+bytemuck = "1.25.0"
