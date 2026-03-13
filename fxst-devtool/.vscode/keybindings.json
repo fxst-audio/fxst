@@ -1,0 +1,8 @@
+[
+  {
+    "key": "ctrl+alt+r",
+    "command": "workbench.action.tasks.runTask",
+    "args": "Run fxst-devtool",
+    "when": "editorTextFocus"
+  }
+]

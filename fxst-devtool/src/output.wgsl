@@ -11,19 +11,19 @@ var<uniform> params: Parameters;
 
 struct FsVertex {
     @location(0) uv: vec2<f32>,
-    @builtin(1) pos: vec4<f32>
+    @builtin(position) pos: vec4<f32>
 }
 
 @vertex
-fn vs(@buildin(vertex_index) index: u32) -> FsVertex {
-    var vertecies = array(vec2<f32>,
+fn vs(@builtin(vertex_index) index: u32) -> FsVertex {
+    var vertices = array<vec2<f32>, 6>(
         vec2(params.origin.x, params.origin.y),
         vec2(params.origin.x + params.size.x, params.origin.y),
-        vec2(params.origin.x, params.origin.y + params.size.y),
+        vec2(params.origin.x, params.origin.y - params.size.y),
 
         vec2(params.origin.x + params.size.x, params.origin.y),
-        vec2(params.origin.x, params.origin.y + params.size.y),
-        vec2(params.origin.x + params.size.x, params.origin.y + params.size.y)
+        vec2(params.origin.x, params.origin.y - params.size.y),
+        vec2(params.origin.x + params.size.x, params.origin.y - params.size.y)
     );
 
     var uvs = array<vec2<f32>, 6>(
@@ -43,6 +43,6 @@ fn vs(@buildin(vertex_index) index: u32) -> FsVertex {
 }
 
 @fragment
-fn fs(@location(0) uv: vec2<f32>, @builtin(1) pos: vec4<f32>) -> vec4<f32> {
-    return textureSample(output_frame, output_sampler, uv);
+fn fs(in: FsVertex) -> @location(0) vec4<f32> {
+    return textureSample(output_frame, output_sampler, in.uv);
 }

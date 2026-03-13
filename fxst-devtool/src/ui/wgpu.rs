@@ -13,7 +13,7 @@ pub fn create_instance() -> Instance {
 
     let desc = InstanceDescriptor {
         backend_options,
-        flags: InstanceFlags::DEBUG,
+        flags: InstanceFlags::from_build_config(),
         backends: Backends::all(),
         memory_budget_thresholds: MemoryBudgetThresholds::default()
     };

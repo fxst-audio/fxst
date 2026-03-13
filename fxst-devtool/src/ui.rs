@@ -7,7 +7,7 @@ use crate::ui::wgpu::{create_instance, get_surface_config, get_texture_format, s
 use image::ImageReader;
 use std::ops::Deref;
 use std::sync::Arc;
-use ::wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, CommandEncoder, CommandEncoderDescriptor, Device, Extent3d, Operations, Origin3d, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension};
+use ::wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, CommandEncoderDescriptor, Device, Extent3d, FragmentState, MultisampleState, Operations, Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexState};
 use ::wgpu::util::{BufferInitDescriptor, DeviceExt};
 use egui::{epaint, CentralPanel, RawInput};
 use egui_wgpu::{RendererOptions, ScreenDescriptor};
@@ -39,7 +39,9 @@ struct Ui {
     screen: Option<ScreenDescriptor>,
     quad_options: Option<Buffer>,
     output_view: Option<TextureView>,
-    bind_group: Option<BindGroup>
+    bind_group: Option<BindGroup>,
+    bgl: Option<BindGroupLayout>,
+    pipeline: Option<RenderPipeline>
 }
 
 #[repr(C)]
@@ -51,7 +53,7 @@ struct QuadOptions {
 
 impl Ui {
     pub fn start(device: &Device) -> Result<Self, ()> {
-        let reader = ImageReader::open(r"C:\Users\rayya\Downloads\Untitled.png") // TODO: error handling needed
+        let reader = ImageReader::open(r"C:\Users\Tetra\Downloads\Download.jpg") // TODO: error handling needed
             .map_err(|err| {
                 panic!("{}", err.to_string());
                 ()
@@ -82,7 +84,9 @@ impl Ui {
             screen: None,
             quad_options: None,
             output_view: None,
-            bind_group: None
+            bind_group: None,
+            bgl: None,
+            pipeline: None
         };
         Ok(ui)
     }
@@ -114,7 +118,7 @@ impl Ui {
     fn screen_descriptor(&mut self, size: (u32, u32)) {
         self.screen = Some(ScreenDescriptor {
             size_in_pixels: [size.0, size.1],
-            pixels_per_point: 1.0
+            pixels_per_point: 2.0
         });
     }
 
@@ -129,23 +133,24 @@ impl Ui {
     pub fn setup_vertex_buffer(&mut self, device: &Device) {
         self.quad_options = Some(device.create_buffer_init(&BufferInitDescriptor {
             label: Some("Output frame quads"),
-            usage: BufferUsages::VERTEX,
+            usage: BufferUsages::VERTEX | BufferUsages::UNIFORM,
             contents: &bytemuck::bytes_of(&QuadOptions {
-                origin: [0.2, 0.2, 0.0, 1.0],
-                size: [0.5, 0.5]
+                origin: [0.0, 0.0, 0.0, 1.0],
+                size: [2.0, 2.0]
             })
         }));
     }
 
     pub fn make_sampler(&mut self, device: &Device) -> Sampler {
+        println!("setup sampler");
         device.create_sampler(&SamplerDescriptor {
             label: Some("Output sampler"),
             ..Default::default()
         })
     }
 
-    pub fn setup_bind_group(&mut self, device: &Device) {
-        let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+    pub fn setup_bgl(&mut self, device: &Device) {
+        let bgl = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("Output data layout"),
             entries: &[
                 BindGroupLayoutEntry {
@@ -177,6 +182,12 @@ impl Ui {
             ]
         });
 
+        self.bgl = Some(bgl);
+    }
+
+    pub fn setup_bind_group(&mut self, device: &Device) {
+        println!("Setup bindgroup");
+        let layout = self.bgl.take().expect("BGL not configured");
         let sampler = self.make_sampler(device);
 
         let binding = device.create_bind_group(&BindGroupDescriptor {
@@ -190,6 +201,7 @@ impl Ui {
         });
 
         self.bind_group = Some(binding);
+        self.bgl = Some(layout);
     }
 
     pub fn output_view(&mut self) {
@@ -204,6 +216,52 @@ impl Ui {
             base_mip_level: 0,
             base_array_layer: 0
         }));
+    }
+
+    pub fn setup_pipeline(&mut self, device: &Device) {
+        let bgl = self.bgl.take().expect("BGL not configured");
+
+        let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("PL Layout"),
+            bind_group_layouts: &[ &bgl ],
+            push_constant_ranges: &[]
+        });
+
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("Shader"),
+            source: ShaderSource::Wgsl(include_str!("./output.wgsl").into())
+        });
+
+        let pl = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("Render PL"),
+            layout: Some(&layout),
+            cache: None,
+            depth_stencil: None,
+            fragment: Some(FragmentState {
+                compilation_options: PipelineCompilationOptions::default(),
+                entry_point: Some("fs"),
+                module: &shader,
+                targets: &[Some( ColorTargetState {
+                    format: get_texture_format(),
+                    blend: None,
+                    write_mask: ColorWrites::ALL
+                } )]
+            }),
+            multisample: MultisampleState::default(),
+            multiview: None,
+            primitive: PrimitiveState {
+                ..Default::default()
+            },
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[]
+            }
+        });
+
+        self.pipeline = Some(pl);
+        self.bgl = Some(bgl);
     }
 }
 
@@ -237,8 +295,8 @@ impl ApplicationHandler for EventLoopContext {
             WindowEvent::RedrawRequested if let Some(gfx) = &mut self.graphics && let Some(ui) = &mut self.ui && !ui.loaded => {
                 let size = Extent3d {
                     depth_or_array_layers: 1,
-                    height: ui.size.1,
-                    width: ui.size.0
+                    height: 1000,
+                    width: 1000
                 };
 
                 let texture = gfx.device.create_texture(&TextureDescriptor {
@@ -248,7 +306,7 @@ impl ApplicationHandler for EventLoopContext {
                     sample_count: 1,
                     dimension: TextureDimension::D2,
                     format: TextureFormat::Rgba8UnormSrgb,
-                    usage: TextureUsages::RENDER_ATTACHMENT,
+                    usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
                     view_formats: &[],
                 });
 
@@ -257,6 +315,7 @@ impl ApplicationHandler for EventLoopContext {
 
                 // (L * W * B) / (B * W)
 
+                // ---
                 // gfx.queue.write_texture(TexelCopyTextureInfo {
                 //     texture: &texture,
                 //     aspect: TextureAspect::All,
@@ -271,6 +330,7 @@ impl ApplicationHandler for EventLoopContext {
                 //     height: ui.size.1,
                 //     depth_or_array_layers: 1
                 // });
+                // ---
 
                 let mut encoder = gfx.device.create_command_encoder(&CommandEncoderDescriptor {
                     label: Some("main")
@@ -301,7 +361,9 @@ impl ApplicationHandler for EventLoopContext {
                 ui.output_view();
                 gfx.queue.submit([ encoder.finish() ]);
                 ui.setup_vertex_buffer(&gfx.device);
+                ui.setup_bgl(&gfx.device);
                 ui.setup_bind_group(&gfx.device);
+                ui.setup_pipeline(&gfx.device);
                 surface_texture.present();
 
                 let window = self.windows.iter_mut().find(|win| win.id() == window_id);
@@ -343,6 +405,7 @@ impl ApplicationHandler for EventLoopContext {
                 ui.render_wgpu(&clipped, &mut pass);
                 drop(pass);
 
+                // ---
                 // encoder.copy_texture_to_texture(TexelCopyTextureInfo {
                 //     texture: &ui.texture.as_ref().unwrap(),
                 //     aspect: TextureAspect::All,
@@ -359,17 +422,9 @@ impl ApplicationHandler for EventLoopContext {
                 //     depth_or_array_layers: 1
                 // });
 
-                let output_view = surface_texture.texture.create_view(&TextureViewDescriptor {
-                    label: Some("Output surface"),
-                    base_array_layer: 0,
-                    base_mip_level: 0,
-                    mip_level_count: None,
-                    array_layer_count: None,
-                    dimension: None,
-                    usage: None,
-                    format: None,
-                    aspect: TextureAspect::All
-                });
+                // ---
+
+                let output_view = surface_texture.texture.create_view(&TextureViewDescriptor::default());
 
                 let mut frame_pass = encoder.begin_render_pass(&RenderPassDescriptor {
                     label: Some("Final output frame"),
@@ -384,8 +439,9 @@ impl ApplicationHandler for EventLoopContext {
                     occlusion_query_set: None
                 });
 
+                frame_pass.set_pipeline(ui.pipeline.as_ref().expect("Pipeline not initialized"));
                 frame_pass.set_bind_group(0, ui.bind_group.as_ref().unwrap(), &[]);
-                frame_pass.draw(0..6, 0..0);
+                frame_pass.draw(0..6, 0..1);
 
                 drop(frame_pass);
 
