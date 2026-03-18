@@ -53,12 +53,14 @@ pub fn get_texture_format() -> TextureFormat {
 }
 
 pub fn get_surface_config(width: u32, height: u32) -> SurfaceConfiguration {
+    println!("Surface config {width} by {height}");
+
     SurfaceConfiguration {
         usage: TextureUsages::RENDER_ATTACHMENT,
         format: get_texture_format(),
         width: width * 2,
         height: height * 2,
-        present_mode: PresentMode::Mailbox,
+        present_mode: PresentMode::Fifo,
         desired_maximum_frame_latency: 1 / 60,
         alpha_mode: CompositeAlphaMode::Opaque,
         view_formats: vec![ get_texture_format() ]

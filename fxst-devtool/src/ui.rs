@@ -2,6 +2,7 @@ pub mod error;
 pub mod wgpu;
 
 use std::num::{NonZeroU32, NonZeroU64};
+use std::time::Instant;
 use crate::ui::error::{StartError, StartErrorTask};
 use crate::ui::wgpu::{create_instance, get_surface_config, get_texture_format, setup_graphics, GraphicsState};
 use image::ImageReader;
@@ -9,7 +10,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use ::wgpu::{BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType, BufferSize, BufferUsages, ColorTargetState, ColorWrites, CommandEncoder, CommandEncoderDescriptor, Device, Extent3d, FragmentState, MultisampleState, Operations, Origin3d, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RenderPipeline, RenderPipelineDescriptor, Sampler, SamplerBindingType, SamplerDescriptor, ShaderModuleDescriptor, ShaderSource, ShaderStages, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension, TextureFormat, TextureSampleType, TextureUsages, TextureView, TextureViewDescriptor, TextureViewDimension, VertexState};
 use ::wgpu::util::{BufferInitDescriptor, DeviceExt};
-use egui::{epaint, CentralPanel, RawInput};
+use egui::{CentralPanel, Id, RawInput, epaint};
 use egui_wgpu::{RendererOptions, ScreenDescriptor};
 use pollster::FutureExt;
 use winit::application::ApplicationHandler;
@@ -118,7 +119,7 @@ impl Ui {
     fn screen_descriptor(&mut self, size: (u32, u32)) {
         self.screen = Some(ScreenDescriptor {
             size_in_pixels: [size.0, size.1],
-            pixels_per_point: 2.0
+            pixels_per_point: 1.0
         });
     }
 
@@ -135,7 +136,7 @@ impl Ui {
             label: Some("Output frame quads"),
             usage: BufferUsages::VERTEX | BufferUsages::UNIFORM,
             contents: &bytemuck::bytes_of(&QuadOptions {
-                origin: [0.0, 0.0, 0.0, 1.0],
+                origin: [-1.0, 1.0, 0.0, 1.0],
                 size: [2.0, 2.0]
             })
         }));
@@ -271,6 +272,12 @@ pub struct EventLoopContext {
     ui: Option<Ui>
 }
 
+impl EventLoopContext {
+    fn get_window(windows: &[Arc<dyn Window>], id: WindowId) -> &Arc<dyn Window> {
+        windows.iter().find(|win| win.id() == id).expect("Invalid window ID")
+    }
+}
+
 impl ApplicationHandler for EventLoopContext {
     fn resumed(&mut self, event_loop: &dyn ActiveEventLoop) {
         println!("Foreground app");
@@ -293,10 +300,15 @@ impl ApplicationHandler for EventLoopContext {
     fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::RedrawRequested if let Some(gfx) = &mut self.graphics && let Some(ui) = &mut self.ui && !ui.loaded => {
+                println!("First redraw, loading texture");
+
+                let window = Self::get_window(&self.windows, window_id);
+                let surface = window.surface_size();
+
                 let size = Extent3d {
                     depth_or_array_layers: 1,
-                    height: 1000,
-                    width: 1000
+                    height: surface.height,
+                    width: surface.width
                 };
 
                 let texture = gfx.device.create_texture(&TextureDescriptor {
@@ -366,24 +378,32 @@ impl ApplicationHandler for EventLoopContext {
                 ui.setup_pipeline(&gfx.device);
                 surface_texture.present();
 
-                let window = self.windows.iter_mut().find(|win| win.id() == window_id);
-                if let Some(real_window) = window {
-                    real_window.request_redraw();
-                    let size = real_window.surface_size();
-                    ui.prepare((size.width, size.height))
-                } else {
-                    eprintln!("Window not stored. this is a bug");
-                }
+                window.request_redraw();
+                let size = window.surface_size();
+                ui.prepare((size.width, size.height));
             },
             WindowEvent::RedrawRequested if let Some(gfx) = &mut self.graphics && let Some(ui) = &mut self.ui => {
+                let render_start = Instant::now();
+                let max_render_start = render_start.clone();
+
+
                 let surface_texture = gfx.surface.get_current_texture().unwrap();
+                println!("-- Surface texture acquired, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
+
                 let mut encoder = gfx.device.create_command_encoder(&CommandEncoderDescriptor {
                     label: Some("main")
                 });
 
+                println!("-- Encoder created, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
+
                 let size = self.windows.iter().find(|win| win.id() == window_id).unwrap().surface_size();
                 let clipped = ui.ui_clipped(&gfx.device, &gfx.queue);
                 ui.buffer_clipped(&gfx.device, &gfx.queue, &mut encoder, &clipped);
+
+                println!("-- Buffer ready, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
 
                 let output_view = ui.output_view.as_ref().unwrap();
 
@@ -404,6 +424,9 @@ impl ApplicationHandler for EventLoopContext {
                     .forget_lifetime();
                 ui.render_wgpu(&clipped, &mut pass);
                 drop(pass);
+
+                println!("-- Render pass complete, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
 
                 // ---
                 // encoder.copy_texture_to_texture(TexelCopyTextureInfo {
@@ -439,18 +462,37 @@ impl ApplicationHandler for EventLoopContext {
                     occlusion_query_set: None
                 });
 
+                println!("-- pass 1 recorded, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
+
                 frame_pass.set_pipeline(ui.pipeline.as_ref().expect("Pipeline not initialized"));
                 frame_pass.set_bind_group(0, ui.bind_group.as_ref().unwrap(), &[]);
                 frame_pass.draw(0..6, 0..1);
 
                 drop(frame_pass);
 
+                println!("-- pass 2 recorded, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
+
                 gfx.queue.submit([ encoder.finish() ]);
+
+                println!("-- Queue submit complete, {:?}", render_start.elapsed());
+                let render_start = Instant::now();
+
                 surface_texture.present();
+
+                println!("-- Surface texture presented, {:?}", render_start.elapsed());
+
+                let render_duration = format!("{:?}", max_render_start.elapsed());
+                println!("Render time: {render_duration}     ");
             },
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             },
+            WindowEvent::SurfaceResized(ps) if let Some(ui) = &mut self.ui => {
+                let window = Self::get_window(&self.windows, window_id);
+                ui.prepare((ps.width, ps.height));
+            }
             _ => {}
         }
     }
