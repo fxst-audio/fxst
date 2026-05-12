@@ -48,19 +48,3 @@ pub fn harmonic_limit(start: f32, end: f32) -> u32 {
     // end / start = n
     (end / start).floor() as u32
 }
-
-pub trait Sound {
-    fn compute(&self, index: u32) -> Option<Harmonic>;
-    fn reset(&self) {}
-    fn get_harmonic(&self, index: u32) -> Harmonic {
-        self.compute(index).unwrap_or(Harmonic::SILENT)
-    }
-}
-
-pub trait Effect {
-    fn process(&self, index: u32, harmonic: Harmonic) -> Option<Harmonic>;
-    fn reset(&self) {}
-    fn get_harmonic(&self, index: u32, harmonic: Harmonic) -> Harmonic {
-        self.process(index, harmonic).unwrap_or(Harmonic::SILENT)
-    }
-}
